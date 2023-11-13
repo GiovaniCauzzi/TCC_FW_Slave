@@ -40,33 +40,47 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
+DAC_HandleTypeDef hdac;
+DMA_HandleTypeDef hdma_dac2;
 
 I2C_HandleTypeDef hi2c2;
 
 I2S_HandleTypeDef hi2s2;
+DMA_HandleTypeDef hdma_i2s2_ext_tx;
+DMA_HandleTypeDef hdma_spi2_rx;
 
 TIM_HandleTypeDef htim14;
 
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-int16_t adcData[dBUFFER_SIZE];
-int16_t dacData[dBUFFER_SIZE];
+int16_t I2S_inputData[dBUFFER_I2S_SIZE];
+int16_t I2S_outputData[dBUFFER_I2S_SIZE];
+uint16_t adc_buf[dBUFFER_ADC_SIZE];
+uint16_t dac_buf[dBUFFER_ADC_SIZE];
 
-static volatile int16_t *inBufferPtr;
-static volatile int16_t *outBufferPtr = &dacData[0];
+static volatile int16_t *I2S_inBufferPtr;
+static volatile int16_t *I2S_outputBufferPtr = &I2S_outputData[0];
 
-uint8_t flagDataReady = 0;
+static volatile int16_t *ADC_inBufferPtr;
+static volatile int16_t *DAC_outputBufferPtr = &I2S_outputData[0];
+
+uint8_t I2S_flagDataReady = 0;
+uint8_t ADC_flagDataReady = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM14_Init(void);
+static void MX_DAC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -75,25 +89,38 @@ static void MX_TIM14_Init(void);
 /* USER CODE BEGIN 0 */
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  inBufferPtr = &adcData[0];
-  outBufferPtr = &dacData[0];
-  flagDataReady = 1;
+  I2S_inBufferPtr  = &I2S_inputData[0];
+  I2S_outputBufferPtr = &I2S_outputData[0];
+  I2S_flagDataReady = 1;
 }
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  inBufferPtr = &adcData[dBUFFER_SIZE / 2];
-  outBufferPtr = &dacData[dBUFFER_SIZE / 2];
-  flagDataReady = 1;
+  I2S_inBufferPtr  = &I2S_inputData[dBUFFER_I2S_SIZE / 2];
+  I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
+  I2S_flagDataReady = 1;
 }
 
 void zera_buffer(void)
 {
-  for(uint16_t i = 0; i<dBUFFER_SIZE ; i++)
+  for(uint16_t i = 0; i<dBUFFER_I2S_SIZE ; i++)
   {
-      adcData[i] = 0;
+      I2S_inputData[i] = 0;
   }
-    
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	*ADC_inBufferPtr = &adc_buf[0];
+  DAC_outputBufferPtr = &dac_buf[0];
+  ADC_flagDataReady = 1;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	*ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
+  ADC_flagDataReady = 1;
 }
 
 
@@ -109,55 +136,26 @@ void generateSineWave(float* buffer, int numSamples) {
     }
 }
 
-void processData()
+void I2S_processData()
 {
-  static float leftIn, leftOut;
-  static float rightIn, rightOut;
-  static uint32_t time = 0;
+	for(uint16_t n = 0; n < dBUFFER_ADC_SIZE; n++)
+	{
+		dac_buf[n] = I2S_inputData[n*2];
+		dac_buf[n] = 2048;
+	}
 
-  if(time++ > 100000)
-  {
-	  time = 0;
-  }
-
-  for (uint16_t n = 0 ; n < (dBUFFER_SIZE / 2 - 1) ; n += 2)
-  {
-
-    //================ LEFT CHANNEL ================
-    // Get ADC input and convert it to float
-    leftIn = INT16_TO_FLOAT * inBufferPtr[n];
-    if (leftIn > 1.0f)
-    {
-      leftIn -= 2.0f;
-    }
-
-    // Compute new sample
-    leftOut = leftIn;
-    //leftOut = 1000000000 * sin(2 * M_PI * FREQUENCY * time);
-
-    // Convert back to signed int  and set DAC output
-    outBufferPtr[n] = (int16_t)(FLOAT_TO_INT16 * leftOut);
-    //outBufferPtr[n] = 0;
-
-    //================ RIGHT CHANNEL ================
-    // Get ADC input and convert it to float
-    rightIn = INT16_TO_FLOAT * inBufferPtr[n+1];
-    if (rightIn > 1.0f)
-    {
-      rightIn -= 2.0f;
-    }
-
-    // Compute new sample
-    rightOut = rightIn;
-    //rightOut = 1000000000 * sin(2 * M_PI * FREQUENCY * time);
-
-    // Convert back to signed int  and set DAC output
-    outBufferPtr[n+1] = (int16_t)(FLOAT_TO_INT16 * rightOut);
-    //outBufferPtr[n+1] = 0;
-
-  }
-  flagDataReady = 0;
+  I2S_flagDataReady = 0;
 }
+
+void ADC_processData()
+{
+  for (uint16_t n = 0 ; n < dBUFFER_ADC_SIZE ; n++)
+  {
+      I2S_outputData[n*2] = adc_buf[n];
+  }
+  ADC_flagDataReady = 0;
+}
+
 
 /* USER CODE END 0 */
 
@@ -168,7 +166,7 @@ void processData()
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  uint16_t blinkTimer = 1; //1ms steps
+  uint16_t blinkTimer = 100; //1ms steps
   uint16_t blinkCount = 0;
   /* USER CODE END 1 */
 
@@ -190,26 +188,36 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C2_Init();
   MX_I2S2_Init();
   MX_ADC1_Init();
   MX_USART1_UART_Init();
   MX_TIM14_Init();
+  MX_DAC_Init();
   /* USER CODE BEGIN 2 */
-  codec_init(&hi2c2);
+  //codec_init(&hi2c2);
   //codec_init_teste(&hi2c2);
   HAL_TIM_Base_Start_IT(&htim14);
 
-  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)dacData, (uint16_t *)adcData, dBUFFER_SIZE);
+  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)I2S_outputData, (uint16_t *)I2S_inputData, dBUFFER_I2S_SIZE);
+  status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, dBUFFER_ADC_SIZE);
+  status = HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2,  (uint32_t*)dac_buf, dBUFFER_ADC_SIZE, DAC_ALIGN_12B_L);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (flagDataReady)
+    if (I2S_flagDataReady)
     {
-		processData();
+      I2S_processData();
+    }
+
+    if(ADC_flagDataReady)
+    {
+      ADC_processData();
     }
 
     if (GL_timer_1ms)
@@ -301,13 +309,13 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -316,7 +324,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -326,6 +334,46 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief DAC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DAC_Init(void)
+{
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
+  DAC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
+  hdac.Instance = DAC;
+  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT2 config
+  */
+  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
+  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
 
 }
 
@@ -458,6 +506,32 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
