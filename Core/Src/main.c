@@ -51,6 +51,7 @@ I2S_HandleTypeDef hi2s2;
 DMA_HandleTypeDef hdma_i2s2_ext_tx;
 DMA_HandleTypeDef hdma_spi2_rx;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim14;
 
 UART_HandleTypeDef huart1;
@@ -81,6 +82,7 @@ static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM14_Init(void);
 static void MX_DAC_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -141,7 +143,7 @@ void I2S_processData()
 	for(uint16_t n = 0; n < dBUFFER_ADC_SIZE; n++)
 	{
 		dac_buf[n] = I2S_inputData[n*2];
-		dac_buf[n] = 2048;
+		//dac_buf[n] = 2048;
 	}
 
   I2S_flagDataReady = 0;
@@ -166,7 +168,7 @@ void ADC_processData()
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  uint16_t blinkTimer = 100; //1ms steps
+  uint16_t blinkTimer = 250; //1ms steps
   uint16_t blinkCount = 0;
   /* USER CODE END 1 */
 
@@ -195,14 +197,16 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM14_Init();
   MX_DAC_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   //codec_init(&hi2c2);
   //codec_init_teste(&hi2c2);
   HAL_TIM_Base_Start_IT(&htim14);
+  HAL_TIM_Base_Start_IT(&htim2);
 
   HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)I2S_outputData, (uint16_t *)I2S_inputData, dBUFFER_I2S_SIZE);
   status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, dBUFFER_ADC_SIZE);
-  status = HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2,  (uint32_t*)dac_buf, dBUFFER_ADC_SIZE, DAC_ALIGN_12B_L);
+  status = HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2,  (uint32_t*)dac_buf, dBUFFER_ADC_SIZE, DAC_ALIGN_12B_R);
 
   /* USER CODE END 2 */
 
@@ -213,6 +217,7 @@ int main(void)
     if (I2S_flagDataReady)
     {
       I2S_processData();
+      blinkTimer = 50;
     }
 
     if(ADC_flagDataReady)
@@ -311,8 +316,8 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T2_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DMAContinuousRequests = ENABLE;
@@ -365,7 +370,7 @@ static void MX_DAC_Init(void)
 
   /** DAC channel OUT2 config
   */
-  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
+  sConfig.DAC_Trigger = DAC_TRIGGER_T2_TRGO;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
   if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_2) != HAL_OK)
   {
@@ -442,6 +447,51 @@ static void MX_I2S2_Init(void)
   /* USER CODE BEGIN I2S2_Init 2 */
 
   /* USER CODE END I2S2_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 3500-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -588,8 +638,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   if (htim->Instance == TIM14) // 100us
   {
-    
-
     GL_timer_100us = 1;
     count_100us++;
 
@@ -622,6 +670,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       //count_1s++;
     }
   
+  }
+
+  if (htim->Instance == TIM2)
+  {
+	  GL_timer_96khz = 1;
   }
 }
 
