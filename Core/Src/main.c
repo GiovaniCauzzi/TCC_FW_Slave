@@ -59,14 +59,14 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 int16_t I2S_inputData[dBUFFER_I2S_SIZE];
 int16_t I2S_outputData[dBUFFER_I2S_SIZE];
-uint16_t adc_buf[dBUFFER_ADC_SIZE];
-uint16_t dac_buf[dBUFFER_ADC_SIZE];
+int16_t adc_buf[dBUFFER_ADC_SIZE];
+int16_t dac_buf[dBUFFER_ADC_SIZE];
 
 static volatile int16_t *I2S_inBufferPtr;
 static volatile int16_t *I2S_outputBufferPtr = &I2S_outputData[0];
 
 static volatile int16_t *ADC_inBufferPtr;
-static volatile int16_t *DAC_outputBufferPtr = &I2S_outputData[0];
+static volatile int16_t *DAC_outputBufferPtr = &dac_buf[0];
 
 uint8_t I2S_flagDataReady = 0;
 uint8_t ADC_flagDataReady = 0;
@@ -93,6 +93,7 @@ void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
   I2S_inBufferPtr  = &I2S_inputData[0];
   I2S_outputBufferPtr = &I2S_outputData[0];
+  DAC_outputBufferPtr = &dac_buf[0];
   I2S_flagDataReady = 1;
 }
 
@@ -100,6 +101,7 @@ void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
   I2S_inBufferPtr  = &I2S_inputData[dBUFFER_I2S_SIZE / 2];
   I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
   I2S_flagDataReady = 1;
 }
 
@@ -111,17 +113,31 @@ void zera_buffer(void)
   }
 }
 
+/*void HAL_DAC_ConvHalfCpltCallback(ADC_HandleTypeDef* hdac)
+{
+  ADC_inBufferPtr = &adc_buf[0];
+  //DAC_outputBufferPtr = &dac_buf[0];
+  ADC_flagDataReady = 1;
+}
+
+void HAL_DAC_ConvCpltCallback(ADC_HandleTypeDef* hdac)
+{
+  ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
+  //DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
+  ADC_flagDataReady = 1;
+}*/
+
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	*ADC_inBufferPtr = &adc_buf[0];
-  DAC_outputBufferPtr = &dac_buf[0];
+  ADC_inBufferPtr = &adc_buf[0];
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
   ADC_flagDataReady = 1;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-	*ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
-  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
+  ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
+  DAC_outputBufferPtr = &dac_buf[0];
   ADC_flagDataReady = 1;
 }
 
@@ -140,10 +156,9 @@ void generateSineWave(float* buffer, int numSamples) {
 
 void I2S_processData()
 {
-	for(uint16_t n = 0; n < dBUFFER_ADC_SIZE; n++)
+	for(uint16_t n = 0; n < (dBUFFER_I2S_SIZE/2); n++)
 	{
-		dac_buf[n] = I2S_inputData[n*2];
-		//dac_buf[n] = 2048;
+		dac_buf[n] = I2S_inBufferPtr[n*2];
 	}
 
   I2S_flagDataReady = 0;
@@ -151,9 +166,10 @@ void I2S_processData()
 
 void ADC_processData()
 {
-  for (uint16_t n = 0 ; n < dBUFFER_ADC_SIZE ; n++)
+  for (uint16_t n = 0 ; n < (dBUFFER_ADC_SIZE/2) ; n++)
   {
-      I2S_outputData[n*2] = adc_buf[n];
+	  I2S_outputBufferPtr[n*2] = ADC_inBufferPtr[n];
+	  //DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
   }
   ADC_flagDataReady = 0;
 }
@@ -232,10 +248,14 @@ int main(void)
       if(blinkCount++ >= blinkTimer)
       {
         blinkCount = 0;
-        HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
+        //HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
       }
+    }
 
-      //codec_init(&hi2c2);
+    if(GL_timer_48khz)
+    {
+    	GL_timer_48khz = 0;
+    	HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
     }
 
     /* USER CODE END WHILE */
@@ -471,7 +491,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 3500-1;
+  htim2.Init.Period = 1750-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -674,7 +694,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
   if (htim->Instance == TIM2)
   {
-	  GL_timer_96khz = 1;
+	  GL_timer_48khz = 1;
   }
 }
 
