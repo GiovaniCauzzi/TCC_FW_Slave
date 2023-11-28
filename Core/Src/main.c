@@ -113,16 +113,12 @@ void zera_buffer(void)
 
 /*void HAL_DAC_ConvHalfCpltCallback(ADC_HandleTypeDef* hdac)
 {
-  ADC_inBufferPtr = &adc_buf[0];
-  //DAC_outputBufferPtr = &dac_buf[0];
-  ADC_flagDataReady = 1;
+  DAC_outputBufferPtr = &dac_buf[0];
 }
 
 void HAL_DAC_ConvCpltCallback(ADC_HandleTypeDef* hdac)
 {
-  ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
-  //DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
-  ADC_flagDataReady = 1;
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
 }*/
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
@@ -456,7 +452,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
   hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
-  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_22K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
   hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
   hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_ENABLE;
@@ -491,7 +487,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1750-1;
+  htim2.Init.Period = 3500-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -659,6 +655,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM2)
   {
 	  GL_timer_48khz = 1;
+	  HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
   }
 
   /*if (htim->Instance == TIM14) // 100us
