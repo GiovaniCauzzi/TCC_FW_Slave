@@ -91,7 +91,6 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN 0 */
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  I2S_inBufferPtr  = &I2S_inputData[0];
   I2S_outputBufferPtr = &I2S_outputData[0];
   DAC_outputBufferPtr = &dac_buf[0];
   I2S_flagDataReady = 1;
@@ -99,7 +98,6 @@ void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 
 void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-  I2S_inBufferPtr  = &I2S_inputData[dBUFFER_I2S_SIZE / 2];
   I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
   DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
   I2S_flagDataReady = 1;
@@ -130,14 +128,16 @@ void HAL_DAC_ConvCpltCallback(ADC_HandleTypeDef* hdac)
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
   ADC_inBufferPtr = &adc_buf[0];
-  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
+  I2S_outputBufferPtr = &I2S_outputData[0];
+  DAC_outputBufferPtr = &dac_buf[0];
   ADC_flagDataReady = 1;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
   ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
-  DAC_outputBufferPtr = &dac_buf[0];
+  I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
   ADC_flagDataReady = 1;
 }
 
@@ -158,7 +158,7 @@ void I2S_processData()
 {
 	for(uint16_t n = 0; n < (dBUFFER_I2S_SIZE/2); n++)
 	{
-		dac_buf[n] = I2S_inBufferPtr[n*2];
+		//dac_buf[n] = I2S_inBufferPtr[n*2];
 	}
 
   I2S_flagDataReady = 0;
@@ -169,7 +169,7 @@ void ADC_processData()
   for (uint16_t n = 0 ; n < (dBUFFER_ADC_SIZE/2) ; n++)
   {
 	  I2S_outputBufferPtr[n*2] = ADC_inBufferPtr[n];
-	  //DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
+	  DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
   }
   ADC_flagDataReady = 0;
 }
@@ -241,7 +241,7 @@ int main(void)
       ADC_processData();
     }
 
-    if (GL_timer_1ms)
+    /*if (GL_timer_1ms)
     {
       GL_timer_1ms = 0;
 
@@ -256,7 +256,7 @@ int main(void)
     {
     	GL_timer_48khz = 0;
     	HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
-    }
+    }*/
 
     /* USER CODE END WHILE */
 
@@ -656,7 +656,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   static int count_100ms = 0;
   //static int count_1s = 0;
 
-  if (htim->Instance == TIM14) // 100us
+  if (htim->Instance == TIM2)
+  {
+	  GL_timer_48khz = 1;
+  }
+
+  /*if (htim->Instance == TIM14) // 100us
   {
     GL_timer_100us = 1;
     count_100us++;
@@ -690,12 +695,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       //count_1s++;
     }
   
-  }
+  }*/
 
-  if (htim->Instance == TIM2)
-  {
-	  GL_timer_48khz = 1;
-  }
+
 }
 
 /* USER CODE END 4 */

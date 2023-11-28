@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <math.h>
 
-#define dBUFFER_I2S_SIZE 16
-#define dBUFFER_ADC_SIZE 8
+#define dBUFFER_I2S_SIZE 128
+#define dBUFFER_ADC_SIZE 64
 #define INT16_TO_FLOAT 1.0f / 32768.0f
 #define FLOAT_TO_INT16 32768.0F
 
