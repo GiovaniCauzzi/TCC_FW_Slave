@@ -89,6 +89,32 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+typedef struct
+{
+	float alpha;
+	float out;
+}Struct_filter;
+
+
+void filter_init(Struct_filter * filterData, float alpha)
+{
+	if(alpha > 1.0f)
+	{
+		alpha = 1.0f;
+	}else if(alpha < 0.0f)
+	{
+		alpha = 0.0f;
+	}
+	filterData->alpha = alpha;
+}
+
+float filter_update(Struct_filter * filterData, float newSample)
+{
+	filterData->out = filterData->alpha * newSample + (1.0f - filterData->alpha) * filterData->out;
+	return filterData->out;
+}
+
+
 void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
   I2S_outputBufferPtr = &I2S_outputData[0];
@@ -160,15 +186,23 @@ void I2S_processData()
   I2S_flagDataReady = 0;
 }
 
-void ADC_processData()
+void ADC_processData(Struct_filter * filterData)
 {
+	float inputSample = 0;
+	float outputSample = 0;
+
   for (uint16_t n = 0 ; n < (dBUFFER_ADC_SIZE/2) ; n++)
   {
-	  I2S_outputBufferPtr[n*2] = ADC_inBufferPtr[n];
-	  DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
+	  //DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
+	  inputSample = INT16_TO_FLOAT * ADC_inBufferPtr[n];
+	  outputSample = filter_update(filterData,inputSample);
+
+
+	  DAC_outputBufferPtr[n] = outputSample*FLOAT_TO_INT16;
   }
   ADC_flagDataReady = 0;
 }
+
 
 
 /* USER CODE END 0 */
@@ -182,6 +216,8 @@ int main(void)
   /* USER CODE BEGIN 1 */
   uint16_t blinkTimer = 250; //1ms steps
   uint16_t blinkCount = 0;
+  Struct_filter filterData;
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -219,7 +255,7 @@ int main(void)
   HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)I2S_outputData, (uint16_t *)I2S_inputData, dBUFFER_I2S_SIZE);
   status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, dBUFFER_ADC_SIZE);
   status = HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2,  (uint32_t*)dac_buf, dBUFFER_ADC_SIZE, DAC_ALIGN_12B_R);
-
+  filter_init(&filterData, 0.01f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -234,7 +270,7 @@ int main(void)
 
     if(ADC_flagDataReady)
     {
-      ADC_processData();
+      ADC_processData(&filterData);
     }
 
     /*if (GL_timer_1ms)
