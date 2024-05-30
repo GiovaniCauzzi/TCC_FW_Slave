@@ -6,11 +6,17 @@
 #include <stdio.h>
 #include <math.h>
 
+#define dPI 3.14159265f
+
 #define dBUFFER_I2S_SIZE 16
-#define dBUFFER_ADC_SIZE 8
-#define dAPLHA 0.5f
-#define INT16_TO_FLOAT 1.0f / 32768.0f
-#define FLOAT_TO_INT16 32768.0F
+#define dBUFFER_ADC_SIZE 20//16
+// #define INT16_TO_FLOAT 1.0f / 32768.0f
+// #define FLOAT_TO_INT16 32768.0F
+#define INT16_TO_FLOAT 1.0f / 1000.0f
+#define FLOAT_TO_INT16 1000.0F
+
+#define dFS 24000
+#define dTS 0.000042408F
 
 
 

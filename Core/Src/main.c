@@ -57,18 +57,12 @@ TIM_HandleTypeDef htim14;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-int16_t I2S_inputData[dBUFFER_I2S_SIZE];
-int16_t I2S_outputData[dBUFFER_I2S_SIZE];
 int16_t adc_buf[dBUFFER_ADC_SIZE];
 int16_t dac_buf[dBUFFER_ADC_SIZE];
-
-static volatile int16_t *I2S_inBufferPtr;
-static volatile int16_t *I2S_outputBufferPtr = &I2S_outputData[0];
 
 static volatile int16_t *ADC_inBufferPtr;
 static volatile int16_t *DAC_outputBufferPtr = &dac_buf[0];
 
-uint8_t I2S_flagDataReady = 0;
 uint8_t ADC_flagDataReady = 0;
 /* USER CODE END PV */
 
@@ -91,111 +85,47 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN 0 */
 typedef struct
 {
-	float alpha;
-	float out;
+	double cutoffFrequency;
+	double out;
 }Struct_filter;
 
 
-void filter_init(Struct_filter * filterData, float alpha)
+void filter_init(Struct_filter * filterData, double fc)
 {
-	if(alpha > 1.0f)
-	{
-		alpha = 1.0f;
-	}else if(alpha < 0.0f)
-	{
-		alpha = 0.0f;
-	}
-	filterData->alpha = alpha;
+	filterData->cutoffFrequency = fc*2*dPI;
 }
 
-float filter_update(Struct_filter * filterData, float newSample)
+double filter_update(Struct_filter * filterData, double newSample)
 {
-	filterData->out = filterData->alpha * newSample + (1.0f - filterData->alpha) * filterData->out;
+	filterData->out = (filterData->cutoffFrequency*dTS*newSample) + (exp(-filterData->cutoffFrequency*dTS))*filterData->out;
 	return filterData->out;
 }
 
 
-void HAL_I2SEx_TxRxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
-{
-  I2S_outputBufferPtr = &I2S_outputData[0];
-  DAC_outputBufferPtr = &dac_buf[0];
-  I2S_flagDataReady = 1;
-}
-
-void HAL_I2SEx_TxRxCpltCallback(I2S_HandleTypeDef *hi2s)
-{
-  I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
-  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
-  I2S_flagDataReady = 1;
-}
-
-void zera_buffer(void)
-{
-  for(uint16_t i = 0; i<dBUFFER_I2S_SIZE ; i++)
-  {
-      I2S_inputData[i] = 0;
-  }
-}
-
-/*void HAL_DAC_ConvHalfCpltCallback(ADC_HandleTypeDef* hdac)
-{
-  DAC_outputBufferPtr = &dac_buf[0];
-}
-
-void HAL_DAC_ConvCpltCallback(ADC_HandleTypeDef* hdac)
-{
-  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
-}*/
-
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
   ADC_inBufferPtr = &adc_buf[0];
-  I2S_outputBufferPtr = &I2S_outputData[0];
-  DAC_outputBufferPtr = &dac_buf[0];
+  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE/2];
   ADC_flagDataReady = 1;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
   ADC_inBufferPtr = &adc_buf[dBUFFER_ADC_SIZE / 2];
-  I2S_outputBufferPtr = &I2S_outputData[dBUFFER_I2S_SIZE / 2];
-  DAC_outputBufferPtr = &dac_buf[dBUFFER_ADC_SIZE / 2];
+  DAC_outputBufferPtr = &dac_buf[0];
   ADC_flagDataReady = 1;
-}
-
-
-#define SAMPLE_RATE 44100  // Sample rate in Hz
-#define FREQUENCY 1440.0   // Frequency of the sine wave in Hz (A440)
-
-// Function to generate a sine wave
-void generateSineWave(float* buffer, int numSamples) {
-    for (int i = 0; i < numSamples; i++) {
-        double t = (double)i / SAMPLE_RATE;
-        double amplitude = 0.5;  // Adjust the amplitude as needed (0.5 for a range of -0.5 to 0.5)
-        buffer[i] = amplitude * sin(2 * M_PI * FREQUENCY * t);
-    }
-}
-
-void I2S_processData()
-{
-	for(uint16_t n = 0; n < (dBUFFER_I2S_SIZE/2); n++)
-	{
-		//dac_buf[n] = I2S_inBufferPtr[n*2];
-	}
-
-  I2S_flagDataReady = 0;
 }
 
 void ADC_processData(Struct_filter * filterData)
 {
-	float inputSample = 0;
-	float outputSample = 0;
+	double inputSample = 0;
+	double outputSample = 0;
 
   for (uint16_t n = 0 ; n < (dBUFFER_ADC_SIZE/2) ; n++)
   {
-	  //DAC_outputBufferPtr[n] = ADC_inBufferPtr[n];
-	  inputSample = INT16_TO_FLOAT * ADC_inBufferPtr[n];
-	  outputSample = filter_update(filterData,inputSample);
+	  inputSample = (INT16_TO_FLOAT * ADC_inBufferPtr[n])* 1.050f;
+	  outputSample = filter_update(filterData,inputSample) ;
+	  // outputSample = inputSample ;
 
 
 	  DAC_outputBufferPtr[n] = outputSample*FLOAT_TO_INT16;
@@ -216,7 +146,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
   uint16_t blinkTimer = 250; //1ms steps
   uint16_t blinkCount = 0;
-  Struct_filter filterData;
+  Struct_filter filterData = {0};
 
   /* USER CODE END 1 */
 
@@ -239,8 +169,8 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2C2_Init();
-  MX_I2S2_Init();
+  // MX_I2C2_Init();
+  // MX_I2S2_Init();
   MX_ADC1_Init();
   MX_USART1_UART_Init();
   MX_TIM14_Init();
@@ -249,46 +179,25 @@ int main(void)
   /* USER CODE BEGIN 2 */
   //codec_init(&hi2c2);
   //codec_init_teste(&hi2c2);
-  HAL_TIM_Base_Start_IT(&htim14);
+  //HAL_TIM_Base_Start_IT(&htim14);
   HAL_TIM_Base_Start_IT(&htim2);
 
-  HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)I2S_outputData, (uint16_t *)I2S_inputData, dBUFFER_I2S_SIZE);
-  status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, dBUFFER_ADC_SIZE);
+  //HAL_StatusTypeDef status = HAL_I2SEx_TransmitReceive_DMA(&hi2s2, (uint16_t *)I2S_outputData, (uint16_t *)I2S_inputData, dBUFFER_I2S_SIZE);
+  HAL_StatusTypeDef status = HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, dBUFFER_ADC_SIZE);
   status = HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_2,  (uint32_t*)dac_buf, dBUFFER_ADC_SIZE, DAC_ALIGN_12B_R);
-  filter_init(&filterData, 0.01f);
+  filter_init(&filterData, 100.0f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (I2S_flagDataReady)
-    {
-      I2S_processData();
-      blinkTimer = 50;
-    }
+
 
     if(ADC_flagDataReady)
     {
-      ADC_processData(&filterData);
+    	ADC_processData(&filterData);
     }
-
-    /*if (GL_timer_1ms)
-    {
-      GL_timer_1ms = 0;
-
-      if(blinkCount++ >= blinkTimer)
-      {
-        blinkCount = 0;
-        //HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
-      }
-    }
-
-    if(GL_timer_48khz)
-    {
-    	GL_timer_48khz = 0;
-    	HAL_GPIO_TogglePin(STAT_LED_INT_GPIO_Port, STAT_LED_INT_Pin);
-    }*/
 
     /* USER CODE END WHILE */
 

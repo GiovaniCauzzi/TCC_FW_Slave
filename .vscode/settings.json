@@ -1,6 +1,9 @@
 {
     "files.associations": {
         "codec.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "math.h": "c",
+        "includes.h": "c",
+        "stdio.h": "c"
     }
 }
